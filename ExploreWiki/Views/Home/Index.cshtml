@@ -1,0 +1,169 @@
+﻿<link rel="stylesheet" href="//code.jquery.com/ui/1.10.2/themes/smoothness/jquery-ui.css"> 
+<!--<link rel="stylesheet" href="//code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css">-->
+<!--<script src="//code.jquery.com/jquery-1.10.2.js"></script>-->
+<!--<script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.min.js"></script>
+
+@{
+    ViewBag.Title = "Home Page";
+}
+
+<style>
+    #InputName {
+        position: relative;
+        z-index: 10000;
+    }
+    .ui-autocomplete {
+         z-index: 9999 !important;
+    }
+
+    #container {
+        display: block; 
+        position:relative;
+        font-size:10px ;
+        width:1000px;
+        overflow: hidden; 
+    } 
+</style>
+
+<div class="jumbotron">
+    <h1>Explore Wiki</h1>
+    <p class="lead">You can start building relationship graph by entering starting person.</p>
+</div>
+
+@model ExploreWiki.Controllers.HomeController.InputPersonName
+
+
+@using (Html.BeginForm())
+{
+    {
+        ViewBag.Title = "Examples - Julius Caesar, Charlemagne, Stefan Nemanja";
+    }
+
+    <h2>@ViewBag.Title.</h2>
+    <h3>@ViewBag.Message</h3>
+    <h4>Generation took - @ViewBag.GenerationTook</h4>
+
+    @Html.TextBoxFor(m => m.InputName)
+    <input type="submit" value="Search" />
+    <div id="container"/>
+
+        <div id="mynetwork" style="height:1000px; float:left; border: 1px; width: 800px">
+            <div class="vis-network" style="height:1000px; touch-action: pan-y; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);">
+                <canvas height="800" style="height:1000px;resize: both;touch-action: none; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></canvas>
+            </div>
+        </div>
+
+        <div id="wikiboxshow" style="border: 1px; float:left;width:200px"></div>
+        }
+
+
+        <script type="text/javascript">
+            $.curCSS = function (element, attrib, val) {
+                $(element).css(attrib, val);
+            };
+
+            $(document).ready(function () {
+                $( "#InputName" ).autocomplete({
+                    source: '@Url.Action("Autocomplete")',
+                    appendTo: "#container"
+                });
+            })
+        </script>
+
+        <script>
+            var canvas = document.getElementsByTagName('canvas')[0];
+            canvas.height = 800;
+            canvas.style.width  = '800px';
+            canvas.style.height = '800px';
+
+            // create an array with nodes
+            var nodes = new vis.DataSet([]);
+
+            // TODO: This is really not the right way to model this MVC stuff but for now it does the job.
+            @foreach (KeyValuePair<string, ExploreWiki.Controllers.HomeController.Person> name in ViewBag.PersonNames)
+            {
+                @:nodes.add([ {id: @name.Value.Id, label: '@name.Value.NormalizedName', color: '@name.Value.GetRGBColor' }]);
+            }
+
+            // create an array with edges
+            var edges = new vis.DataSet([]);
+
+            @foreach (ExploreWiki.Controllers.HomeController.Relation relation in ViewBag.PersonConnections)
+            {
+                @:edges.add([{from: @relation.PersonFrom.Id, to: @relation.PersonTo.Id, label: '@relation.RelationName', arrows: 'to'}])
+            }
+
+            // create a network
+            var container = document.getElementById('mynetwork');
+            var data = {
+                nodes: nodes,
+                edges: edges
+            };
+            var options = { 
+                // layout: {
+                //     hierarchical: {
+                //         sortMethod: "directed"
+                //     }
+                // },
+                physics: {
+                    enabled:true,
+                    "barnesHut": {
+                        "gravitationalConstant": -10,
+                        "centralGravity": 0.0,
+                        "damping": 1,
+                        "avoidOverlap": 1,
+                        "springLength": 450,
+                        "nodeDistance": 400
+                    },
+                    "maxVelocity": 0.5,
+                    "minVelocity": 0,
+                    "timestep": 0.01,
+                    repulsion: {
+                        centralGravity: 0.0,
+                        springLength: 500,
+                        springConstant: 0.05,
+                        nodeDistance: 500,
+                        damping: 0.09
+                    },
+                    stabilization: {
+                        enabled: true,
+                        iterations: 100,
+                        updateInterval: 0.01,
+                        onlyDynamicEdges: false,
+                        fit: true
+                    },
+                },
+                layout: {improvedLayout:true}
+            };
+            var network = new vis.Network(container, data, options);
+
+            @if(!String.IsNullOrEmpty(ViewBag.InputName))
+            {
+                @:var searchTerm="@ViewBag.InputName";
+            }
+            else
+            {
+                @:var searchTerm=""
+            }
+            
+            // TODO: wiki links point to local domain. This should be changed here.
+            // Either redirect to wiki or parhaps do search on explorewiki.
+            var url="http://en.wikipedia.org/w/api.php?action=parse&format=json&page=" + searchTerm + "&redirects&prop=text&callback=?";
+            $.getJSON(url,function(data){
+                wikiHTML = data.parse.text["*"];
+                $wikiDOM = $("<document>"+wikiHTML+"</document>");
+                $("#wikiboxshow").html($wikiDOM.find('.infobox').html());
+            });
+
+            network.on("click", function (params) {
+                var node=nodes.get(params.nodes[0]);
+                var searchTerm=node.label;
+                var url="http://en.wikipedia.org/w/api.php?action=parse&format=json&page=" + searchTerm + "&redirects&prop=text&callback=?";
+                $.getJSON(url,function(data){
+                    wikiHTML = data.parse.text["*"];
+                    $wikiDOM = $("<document>"+wikiHTML+"</document>");
+                    $("#wikiboxshow").html($wikiDOM.find('.infobox').html());
+                });
+            });
+        </script>
