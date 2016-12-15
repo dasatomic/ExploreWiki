@@ -167,7 +167,8 @@ ecf/
 rcf/
 
 # Microsoft Azure ApplicationInsights config file
-ApplicationInsights.config
+# Build is failing without it, Removing ignore.
+# ApplicationInsights.config
 
 # Windows Store app package directory
 AppPackages/
