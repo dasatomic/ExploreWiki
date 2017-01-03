@@ -52,10 +52,12 @@ namespace ExploreWiki.Controllers
                 {
                     if (DistanceFromCenter == 0)
                     {
+                        // Red.
                         return "rgb(255, 0, 0)";
                     }
                     else
                     {
+                        // Gradually fade as you move from the center.
                         return string.Format("rgb(155, 155, {0}", Math.Max(200 - 10 * DistanceFromCenter, 70));
                     }
                 }
@@ -139,6 +141,16 @@ namespace ExploreWiki.Controllers
             FirstSpecialChar,
             SecondPercentage,
             SecondSpecialChar,
+        }
+
+        /// <summary>
+        /// Structure representing a node directly read from database.
+        /// </summary>
+        class GraphRelationRaw
+        {
+            public string Name { get; set; }
+            public string From { get; set; }
+            public string To { get; set; }
         }
 
         /// <summary>
@@ -273,14 +285,14 @@ namespace ExploreWiki.Controllers
 
             System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
             sw.Start();
-            BuildGraph(startingPerson, 1, true, false);
+            BuildGraph(startingPerson, true, false);
 
             if (Persons.Count < 60)
             {
                 // Restart search in aggressive mode.
                 Persons.Clear();
                 PersonConnections.Clear();
-                BuildGraph(startingPerson, 1, true, true, true);
+                BuildGraph(startingPerson, true, true, true);
             }
 
             GenerationTook = sw.Elapsed;
@@ -318,8 +330,10 @@ namespace ExploreWiki.Controllers
         /// <param name="includePointingTo"></param>
         /// <param name="includeNonPersons"></param>
         /// <param name="aggressive"></param>
-        private void BuildGraph(Person startingPerson, int depth, bool includePointingTo, bool includeNonPersons, bool aggressive = false)
+        private void BuildGraph(Person startingPerson, bool includePointingTo, bool includeNonPersons, bool aggressive = false)
         {
+            List<GraphRelationRaw> branchList = new List<GraphRelationRaw>();
+
             // TODO: Don't open new connection every time.
             // Use connection pool.
             using (var connection = new QC.SqlConnection( GetConnectionString(HomeController.DefaultProviderName)))
@@ -370,79 +384,92 @@ where entity_name = @name and link2 is not null and isPerson = 1
 
                     while (reader.Read())
                     {
-                        Person personFrom;
-                        Person personTo;
-
-                        string nodeFrom = reader.GetString(0);
-                        string branchName = reader.GetString(1);
-                        string nodeTo = reader.GetString(2);
-
-                        bool isPersonFromNew = false;
-                        bool isPersonToNew = false;
-
-                        if (!Persons.TryGetValue(nodeFrom, out personFrom))
-                        {
-                            personFrom = new Person(nodeFrom, depth);
-                            Persons.Add(personFrom.Name, personFrom);
-                            isPersonFromNew = true;
-                            processingQueue.Enqueue(personFrom);
-                        }
-
-                        if (!Persons.TryGetValue(nodeTo, out personTo))
-                        {
-                            personTo = new Person(nodeTo, depth);
-                            Persons.Add(personTo.Name, personTo);
-                            isPersonToNew = true;
-                            processingQueue.Enqueue(personTo);
-                        }
-
-                        if (isPersonFromNew)
-                        {
-                            personFrom.DistanceFromCenter = personTo.DistanceFromCenter + 1;
-                        }
-
-                        if (isPersonToNew)
-                        {
-                            personTo.DistanceFromCenter = personFrom.DistanceFromCenter + 1;
-                        }
-
-                        PersonConnections.Add(new Relation(personFrom, personTo, branchName));
+                        branchList.Add(
+                            new GraphRelationRaw {
+                                From = reader.GetString(0),
+                                Name = reader.GetString(1),
+                                To = reader.GetString(2) });
                     }
                 }
             }
 
+            // Premature return if this is a dominant node
+            // later in search.
+            // This is an ugly edge case and should be removed at some point.
+            if (branchList.Count > 20 && startingPerson.DistanceFromCenter > 1)
+            {
+                return;
+            }
+
+            foreach (var branch in branchList)
+            {
+                Person personFrom;
+                Person personTo;
+
+                bool isPersonFromNew = false;
+                bool isPersonToNew = false;
+
+                if (!Persons.TryGetValue(branch.From, out personFrom))
+                {
+                    personFrom = new Person(branch.From, startingPerson.DistanceFromCenter + 1);
+                    Persons.Add(personFrom.Name, personFrom);
+                    isPersonFromNew = true;
+                    processingQueue.Enqueue(personFrom);
+                }
+
+                if (!Persons.TryGetValue(branch.To, out personTo))
+                {
+                    personTo = new Person(branch.To, startingPerson.DistanceFromCenter + 1);
+                    Persons.Add(personTo.Name, personTo);
+                    isPersonToNew = true;
+                    processingQueue.Enqueue(personTo);
+                }
+
+                if (isPersonFromNew)
+                {
+                    personFrom.DistanceFromCenter = personTo.DistanceFromCenter + 1;
+                }
+
+                if (isPersonToNew)
+                {
+                    personTo.DistanceFromCenter = personFrom.DistanceFromCenter + 1;
+                }
+
+                PersonConnections.Add(new Relation(personFrom, personTo, branch.Name));
+            }
+
             // One more check, if we are early in the graph and we still don't have many results
             // do more aggressive search.
-            if (depth == 1 && Persons.Count < 5 && !includePointingTo && !includeNonPersons)
+            if (startingPerson.DistanceFromCenter == 0 && Persons.Count < 5 && (!includePointingTo || !includeNonPersons))
             {
                 if (!includePointingTo)
                 {
-                    BuildGraph(startingPerson, 1, true, false);
+                    BuildGraph(startingPerson, true, false);
                 }
                 else
                 {
                     // Do full search.
-                    BuildGraph(startingPerson, 1, true, true);
+                    BuildGraph(startingPerson, true, true);
                 }
             }
 
             while (processingQueue.Count != 0 && Persons.Count < MaxNumberOfPersonsPerGraph)
             {
-                if (aggressive && depth < 3)
+                if (aggressive && startingPerson.DistanceFromCenter < 3)
                 {
-                    BuildGraph(processingQueue.Dequeue(), depth + 1, true, true, aggressive);
+                    BuildGraph(processingQueue.Dequeue(), true, true, aggressive);
                 }
-                else if (aggressive && depth < 4)
+                else if (aggressive && startingPerson.DistanceFromCenter < 4)
                 {
-                    BuildGraph(processingQueue.Dequeue(), depth + 1, true, false, aggressive);
+                    BuildGraph(processingQueue.Dequeue(), true, false, aggressive);
                 }
-                if (depth < 3 && processingQueue.Count < 30)
+                if (startingPerson.DistanceFromCenter < 2 && Persons.Count < 5 && processingQueue.Count < 5)
                 {
-                    BuildGraph(processingQueue.Dequeue(), depth + 1, true, false);
+                    BuildGraph(processingQueue.Dequeue(), true, false);
                 }
                 else
                 {
-                    BuildGraph(processingQueue.Dequeue(), depth + 1, false, false);
+                    BuildGraph(processingQueue.Dequeue(), false, false);
                 }
             }
         }
