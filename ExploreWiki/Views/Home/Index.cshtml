@@ -1,8 +1,11 @@
-﻿<link rel="stylesheet" href="//code.jquery.com/ui/1.10.2/themes/smoothness/jquery-ui.css"> 
+﻿<link rel="stylesheet" href="//code.jquery.com/ui/1.10.2/themes/smoothness/jquery-ui.css" /> 
 <!--<link rel="stylesheet" href="//code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css">-->
 <!--<script src="//code.jquery.com/jquery-1.10.2.js"></script>-->
-<!--<script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>-->
+<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.min.js"></script>
+<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
 
 @{
     ViewBag.Title = "Home Page";
@@ -24,6 +27,9 @@
         width:1000px;
         overflow: hidden; 
     } 
+
+    #timeline {
+    }
 </style>
 
 <div class="jumbotron">
@@ -47,15 +53,20 @@
     @Html.TextBoxFor(m => m.InputName)
     <input type="submit" value="Search" />
     <div id="container"/>
+    <div id="accordion">
+        <h1 style="text-align:center">Lifetimes - Press here</h1>
+        <div id="timeline" > </div>
+    </div>
 
-        <div id="mynetwork" style="height:1000px; float:left; border: 1px; width: 800px">
-            <div class="vis-network" style="height:1000px; touch-action: pan-y; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);">
-                <canvas height="800" style="height:1000px;resize: both;touch-action: none; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></canvas>
-            </div>
+    <div id="mynetwork" style="height:1000px; float:left; border: 1px; width: 800px">
+        <div class="vis-network" style="height:1000px; touch-action: pan-y; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);">
+            <canvas height="800" style="height:1000px;resize: both;touch-action: none; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></canvas>
         </div>
+    </div>
 
-        <div id="wikiboxshow" style="border: 1px; float:left;width:200px"></div>
-        }
+    <div id="wikiboxshow" style="border: 1px; float:left;width:200px"></div>
+
+}
 
 
         <script type="text/javascript">
@@ -166,4 +177,55 @@
                     $("#wikiboxshow").html($wikiDOM.find('.infobox').html());
                 });
             });
+        </script>
+
+        <script>
+              $( function() {
+                  $( "#accordion" ).accordion( {
+                      collapsible: true,
+                      heightStyle: "content",
+                      active: false
+                  });
+              } );
+        </script>
+
+        <script type="text/javascript">
+            var container = document.getElementById('timeline');
+            var items = new vis.DataSet([
+
+            @foreach (ExploreWiki.Controllers.HomeController.Person person in ViewBag.PersonNames.Values)
+            {
+                if(person.BirthDate.HasValue && person.DeathDate.HasValue)
+                {
+                    @: {id: @person.Id, content: '@person.NormalizedName', start: '@person.BirthDate.Value.ToShortDateString()', end: '@person.DeathDate.Value.ToShortDateString()'},
+                }
+                else if (person.BirthDate.HasValue)
+                {
+                    if (person.BirthDate.Value > DateTime.Now.AddYears(-70))
+                    {
+                        // Assume it is still alive.
+                        @: {id: @person.Id, content: '@person.NormalizedName', start : '@person.BirthDate.Value.ToShortDateString()', end:'@DateTime.Now.ToShortDateString()' },
+                    }
+                    else
+                    {
+                        // Death date is not known, just plot a point.
+                        @: {id: @person.Id, content: 'birth - ' + '@person.NormalizedName', start : '@person.BirthDate.Value.ToShortDateString()', type: 'point' },
+                    }
+                }
+                else if (person.DeathDate.HasValue)
+                {
+                    // Birth date is not known, just plot a point.
+                    @: {id: @person.Id, content: 'death - ' + '@person.NormalizedName', start : '@person.DeathDate.Value.ToShortDateString()', type: 'point' },
+                }
+            }
+]);
+
+          // Configuration for the Timeline
+            var options = {
+                //type: 'point',
+                //showMajorLabels: false
+            };
+
+          // Create a Timeline
+          var timeline = new vis.Timeline(container, items, options);
         </script>

@@ -43,6 +43,16 @@ namespace ExploreWiki.Controllers
             public string NormalizedName { get { return NormalizeString(Name); } }
 
             /// <summary>
+            /// Optional birth date.
+            /// </summary>
+            public DateTime? BirthDate { get; set; }
+
+            /// <summary>
+            /// Optional death date.
+            /// </summary>
+            public DateTime? DeathDate { get; set; }
+
+            /// <summary>
             /// Color of the node.
             /// As we go away from the center color changes.
             /// </summary>
@@ -295,12 +305,86 @@ namespace ExploreWiki.Controllers
                 BuildGraph(startingPerson, true, true, true);
             }
 
+            FillBirthAndDeathDates();
+
             GenerationTook = sw.Elapsed;
 
             ViewBag.PersonNames = Persons;
             ViewBag.PersonConnections = PersonConnections;
             ViewBag.GenerationTook = string.Format("{0}s for generating graph of {1} nodes.", GenerationTook.TotalSeconds, Persons.Count);
             return View();
+        }
+
+        void FillBirthAndDeathDates()
+        {
+            if (Persons.Count == 0)
+            {
+                // Nothing to do here.
+                return;
+            }
+
+            // Craft query for all the persons.
+            //
+            using (var connection = new QC.SqlConnection(GetConnectionString(HomeController.DefaultProviderName)))
+            {
+                connection.Open();
+                using (var command = new QC.SqlCommand())
+                {
+                    command.Connection = connection;
+                    command.CommandType = DT.CommandType.Text;
+                    // This shouldn't be done like this.
+                    command.CommandText =
+                        "SELECT name, birth_date, death_date FROM persons WHERE name IN (" 
+                        + string.Join(", ", Persons.Keys.Select(p => "'" + p.Replace("'", "''") + "'").ToArray()) + ")";
+
+                    QC.SqlDataReader reader = command.ExecuteReader();
+
+                    while (reader.Read())
+                    {
+                        Person person = Persons[reader.GetString(0)];
+
+                        string birthDateStringRaw = null;
+                        string deathDateStringRaw = null;
+
+                        if (!reader.IsDBNull(1))
+                        {
+                            birthDateStringRaw = reader.GetString(1);
+                        }
+
+                        if (!reader.IsDBNull(2))
+                        {
+                            deathDateStringRaw = reader.GetString(2);
+                        }
+
+                        // TODO: Need better logic for handling BC dates.
+                        Action<string, Action<DateTime>> fillDate = (inputRaw, setter) =>
+                        {
+                            if (inputRaw != null)
+                            {
+                                DateTime dt;
+
+                                // Try to extract something useful from date strings.
+                                if (DateTime.TryParse(inputRaw, out dt) || DateTime.TryParse(inputRaw.Replace("\"", ""), out dt))
+                                {
+                                    setter(dt);
+                                }
+                                else
+                                {
+                                    int year;
+                                    if (Int32.TryParse(inputRaw.Replace("\"", ""), out year))
+                                    {
+                                        dt = new DateTime(year, 1, 1);
+                                        setter(dt);
+                                    }
+                                }
+                            }
+                        };
+
+                        fillDate(birthDateStringRaw, (dt) => person.BirthDate = dt);
+                        fillDate(deathDateStringRaw, (dt) => person.DeathDate = dt);
+                    }
+                }
+            }
         }
 
         private string GetConnectionString(string providerName)
