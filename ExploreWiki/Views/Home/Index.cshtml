@@ -11,7 +11,7 @@
     ViewBag.Title = "Home Page";
 }
 
-<style>
+@*<style>
     #InputName {
         position: relative;
         z-index: 10000;
@@ -30,15 +30,14 @@
 
     #timeline {
     }
-</style>
+</style>*@
 
 <div class="jumbotron">
     <h1>Explore Wiki</h1>
     <p class="lead">You can start building relationship graph by entering starting person.</p>
 </div>
 
-@model ExploreWiki.Controllers.HomeController.InputPersonName
-
+@model ExploreWiki.ViewModel.PersonViewModel
 
 @using (Html.BeginForm())
 {
@@ -52,20 +51,24 @@
 
     @Html.TextBoxFor(m => m.InputName)
     <input type="submit" value="Search" />
-    <div id="container"/>
-    <div id="accordion">
-        <h1 style="text-align:center">Lifetimes - Press here</h1>
-        <div id="timeline" > </div>
-    </div>
-
-    <div id="mynetwork" style="height:1000px; float:left; border: 1px; width: 800px">
-        <div class="vis-network" style="height:1000px; touch-action: pan-y; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);">
-            <canvas height="800" style="height:1000px;resize: both;touch-action: none; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></canvas>
+    //pass JSONs on client side as container div data-attributes
+    <div id="container"
+         data-personnamesjson="@ViewBag.personsJson"
+         data-personsconnectionsjson="@ViewBag.PersonsConnectionsJson"
+         data-searchterm="@ViewBag.InputName">
+        <div id="accordion">
+            <h1 style="text-align:center">Lifetimes - Press here</h1>
+            <div id="timeline"> </div>
         </div>
+
+        <div id="mynetwork" style="height:1000px; float:left; border: 1px; width: 800px">
+            <div class="vis-network" style="height:1000px; touch-action: pan-y; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);">
+                <canvas height="800" style="height:1000px;resize: both;touch-action: none; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></canvas>
+            </div>
+        </div>
+
+        <div id="wikiboxshow" style="border: 1px; float:left;width:200px"></div>
     </div>
-
-    <div id="wikiboxshow" style="border: 1px; float:left;width:200px"></div>
-
 }
 
 
@@ -74,158 +77,71 @@
                 $(element).css(attrib, val);
             };
 
-            $(document).ready(function () {
-                $( "#InputName" ).autocomplete({
-                    source: '@Url.Action("Autocomplete")',
-                    appendTo: "#container"
+            $(document)
+                .ready(function() {
+                    $("#InputName")
+                        .autocomplete({
+                            source: '@Url.Action("Autocomplete")',
+                            appendTo: "#container"
+                        });
                 });
-            })
+
+            $( function() {
+                $( "#accordion" ).accordion( {
+                    collapsible: true,
+                    heightStyle: "content",
+                    active: false
+                });
+            } );
         </script>
 
         <script>
-            var canvas = document.getElementsByTagName('canvas')[0];
-            canvas.height = 800;
-            canvas.style.width  = '800px';
-            canvas.style.height = '800px';
-
             // create an array with nodes
             var nodes = new vis.DataSet([]);
-
             // TODO: This is really not the right way to model this MVC stuff but for now it does the job.
-            @foreach (KeyValuePair<string, ExploreWiki.Controllers.HomeController.Person> name in ViewBag.PersonNames)
+            @foreach (KeyValuePair<string, ExploreWiki.Models.Person> name in ViewBag.PersonNames)
             {
                 @:nodes.add([ {id: @name.Value.Id, label: '@name.Value.NormalizedName', color: '@name.Value.GetRGBColor' }]);
             }
 
             // create an array with edges
             var edges = new vis.DataSet([]);
-
-            @foreach (ExploreWiki.Controllers.HomeController.Relation relation in ViewBag.PersonConnections)
+            @foreach (ExploreWiki.Models.Relation relation in ViewBag.PersonConnections)
             {
                 @:edges.add([{from: @relation.PersonFrom.Id, to: @relation.PersonTo.Id, label: '@relation.RelationName', arrows: 'to'}])
             }
-
-            // create a network
-            var container = document.getElementById('mynetwork');
-            var data = {
-                nodes: nodes,
-                edges: edges
-            };
-            var options = { 
-                // layout: {
-                //     hierarchical: {
-                //         sortMethod: "directed"
-                //     }
-                // },
-                physics: {
-                    enabled:true,
-                    "barnesHut": {
-                        "gravitationalConstant": -10,
-                        "centralGravity": 0.0,
-                        "damping": 1,
-                        "avoidOverlap": 1,
-                        "springLength": 450,
-                        "nodeDistance": 400
-                    },
-                    "maxVelocity": 0.5,
-                    "minVelocity": 0,
-                    "timestep": 0.01,
-                    repulsion: {
-                        centralGravity: 0.0,
-                        springLength: 500,
-                        springConstant: 0.05,
-                        nodeDistance: 500,
-                        damping: 0.09
-                    },
-                    stabilization: {
-                        enabled: true,
-                        iterations: 100,
-                        updateInterval: 0.01,
-                        onlyDynamicEdges: false,
-                        fit: true
-                    },
-                },
-                layout: {improvedLayout:true}
-            };
-            var network = new vis.Network(container, data, options);
-
-            @if(!String.IsNullOrEmpty(ViewBag.InputName))
+            var searchTerm = "";
+            @if(!string.IsNullOrEmpty(ViewBag.InputName))
             {
                 @:var searchTerm="@ViewBag.InputName";
             }
-            else
-            {
-                @:var searchTerm=""
-            }
             
-            // TODO: wiki links point to local domain. This should be changed here.
-            // Either redirect to wiki or parhaps do search on explorewiki.
-            var url="http://en.wikipedia.org/w/api.php?action=parse&format=json&page=" + searchTerm + "&redirects&prop=text&callback=?";
-            $.getJSON(url,function(data){
-                wikiHTML = data.parse.text["*"];
-                $wikiDOM = $("<document>"+wikiHTML+"</document>");
-                $("#wikiboxshow").html($wikiDOM.find('.infobox').html());
-            });
-
-            network.on("click", function (params) {
-                var node=nodes.get(params.nodes[0]);
-                var searchTerm=node.label;
-                var url="http://en.wikipedia.org/w/api.php?action=parse&format=json&page=" + searchTerm + "&redirects&prop=text&callback=?";
-                $.getJSON(url,function(data){
-                    wikiHTML = data.parse.text["*"];
-                    $wikiDOM = $("<document>"+wikiHTML+"</document>");
-                    $("#wikiboxshow").html($wikiDOM.find('.infobox').html());
-                });
-            });
-        </script>
-
-        <script>
-              $( function() {
-                  $( "#accordion" ).accordion( {
-                      collapsible: true,
-                      heightStyle: "content",
-                      active: false
-                  });
-              } );
-        </script>
-
-        <script type="text/javascript">
-            var container = document.getElementById('timeline');
             var items = new vis.DataSet([
 
-            @foreach (ExploreWiki.Controllers.HomeController.Person person in ViewBag.PersonNames.Values)
-            {
-                if(person.BirthDate.HasValue && person.DeathDate.HasValue)
+                @foreach (ExploreWiki.Models.Person person in ViewBag.PersonNames.Values)
                 {
-                    @: {id: @person.Id, content: '@person.NormalizedName', start: '@person.BirthDate.Value.ToShortDateString()', end: '@person.DeathDate.Value.ToShortDateString()'},
-                }
-                else if (person.BirthDate.HasValue)
-                {
-                    if (person.BirthDate.Value > DateTime.Now.AddYears(-70))
+                    if(person.BirthDate.HasValue && person.DeathDate.HasValue)
                     {
-                        // Assume it is still alive.
-                        @: {id: @person.Id, content: '@person.NormalizedName', start : '@person.BirthDate.Value.ToShortDateString()', end:'@DateTime.Now.ToShortDateString()' },
+                        @: {id: @person.Id, content: '@person.NormalizedName', start: '@person.BirthDate.Value.ToShortDateString()', end: '@person.DeathDate.Value.ToShortDateString()'},
                     }
-                    else
+                    else if (person.BirthDate.HasValue)
                     {
-                        // Death date is not known, just plot a point.
-                        @: {id: @person.Id, content: 'birth - ' + '@person.NormalizedName', start : '@person.BirthDate.Value.ToShortDateString()', type: 'point' },
+                        if (person.BirthDate.Value > DateTime.Now.AddYears(-70))
+                        {
+                            // Assume it is still alive.
+                            @: {id: @person.Id, content: '@person.NormalizedName', start : '@person.BirthDate.Value.ToShortDateString()', end:'@DateTime.Now.ToShortDateString()' },
+                        }
+                        else
+                        {
+                            // Death date is not known, just plot a point.
+                            @: {id: @person.Id, content: 'birth - ' + '@person.NormalizedName', start : '@person.BirthDate.Value.ToShortDateString()', type: 'point' },
+                        }
+                    }
+                    else if (person.DeathDate.HasValue)
+                    {
+                        // Birth date is not known, just plot a point.
+                        @: {id: @person.Id, content: 'death - ' + '@person.NormalizedName', start : '@person.DeathDate.Value.ToShortDateString()', type: 'point' },
                     }
                 }
-                else if (person.DeathDate.HasValue)
-                {
-                    // Birth date is not known, just plot a point.
-                    @: {id: @person.Id, content: 'death - ' + '@person.NormalizedName', start : '@person.DeathDate.Value.ToShortDateString()', type: 'point' },
-                }
-            }
-]);
-
-          // Configuration for the Timeline
-            var options = {
-                //type: 'point',
-                //showMajorLabels: false
-            };
-
-          // Create a Timeline
-          var timeline = new vis.Timeline(container, items, options);
+            ]);
         </script>

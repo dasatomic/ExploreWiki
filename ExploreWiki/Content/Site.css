@@ -24,3 +24,21 @@ textarea {
 }
 
 .ui-autocomplete { position: absolute; cursor: default;z-index:30 !important;}  
+
+
+/*ExploreWiki css*/
+#InputName {
+    position: relative;
+    z-index: 10000;
+}
+.ui-autocomplete {
+        z-index: 9999 !important;
+}
+
+#container {
+    display: block; 
+    position:relative;
+    font-size:10px ;
+    width:1000px;
+    overflow: hidden; 
+} 
